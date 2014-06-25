@@ -10,10 +10,14 @@ func ids(s *Router.Params) ([]byte, int) {
 	return []byte(s.Value), 200
 }
 
-func main() {
+func server() {
 	router := Router.GlobalRouter()
 	router.Get("/ids/:id", Router.HandlerFunc(ids))
 	http.Handle("/", router)
 
 	log.Fatal(http.ListenAndServe(":8888", nil))
+}
+
+func main() {
+	server()
 }
