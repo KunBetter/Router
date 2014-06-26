@@ -1,9 +1,13 @@
 // PathTrie
 package Router
 
+import (
+	"strings"
+)
+
 /*
 	All Paths Examples:
-	/ids/:id
+	/ids/:id -> /ids/:
 	/users/:name
 	/city/beijing
 	/city
@@ -15,20 +19,23 @@ package Router
 */
 
 type PathTrieNode struct {
-	Key    byte   //哈希值
-	isVar  bool   //true -> :id,false -> 5
+	Key    byte
+	IsVar  bool   //true -> :id,false -> 5
 	Var    string //:id,id
 	Flag   bool   //word
 	Childs []*PathTrieNode
+	//此模式路径相应的处理函数
+	Handler HandlerFunc
 }
 
 func NewPathTrieNode(key byte) *PathTrieNode {
 	node := &PathTrieNode{
-		Key:    key,
-		isVar:  false,
-		Var:    "",
-		Flag:   false,
-		Childs: []*PathTrieNode{},
+		Key:     key,
+		IsVar:   false,
+		Var:     "",
+		Flag:    false,
+		Childs:  []*PathTrieNode{},
+		Handler: nil,
 	}
 	return node
 }
@@ -85,18 +92,15 @@ func (trie *PathTrie) FindLastMatchNode(key []byte) (*PathTrieNode, int) {
 	return last, lastI
 }
 
-func (trie *PathTrie) AddPath(path string) {
-	paths := strings.Split(path, "/")
-	for i := 0; i < len(paths); i++ {
-	}
-	key := []byte(token.Text)
+func (trie *PathTrie) AddTmpPath(path string) *PathTrieNode {
+	key := []byte(path)
 	node, lastI := trie.FindLastMatchNode(key)
 	if node == nil {
 		node = trie.Root
 		lastI = 0
 	}
 	for i := lastI; i < len(key); i++ {
-		newNode := NewSliceTrieNode(key[i])
+		newNode := NewPathTrieNode(key[i])
 		clen := len(node.Childs)
 		if clen <= 0 {
 			node.Childs = append(node.Childs, newNode)
@@ -114,5 +118,87 @@ func (trie *PathTrie) AddPath(path string) {
 		node = newNode
 	}
 	node.Flag = true
-	node.Token = token
+	return node
+}
+
+func (trie *PathTrie) AddPath(path string, handler HandlerFunc) {
+	paths := strings.Split(path, "/")
+	tPath := ""
+	pLen := len(paths)
+	if pLen <= 0 {
+		return
+	}
+	var node *PathTrieNode = nil
+	for i := 0; i < pLen-1; i++ {
+		tPath += paths[i]
+		node = trie.AddTmpPath(tPath)
+	}
+	index := strings.Index(paths[pLen-1], ":")
+	if index == 0 {
+		node.IsVar = true
+		node.Var = paths[pLen-1]
+	} else {
+		tPath += paths[pLen-1]
+		node = trie.AddTmpPath(tPath)
+	}
+	node.Handler = handler
+}
+
+func (trie *PathTrie) MatchPrefixPath(path string) *PathTrieNode {
+	key := []byte(path)
+	node := trie.Root
+	if node == nil {
+		return nil
+	}
+	kLen := len(key)
+	var i int = 0
+	for i = 0; i < kLen; i++ {
+		childs := node.Childs
+		pos, found := trie.FindInChilds(childs, key[i])
+		if !found {
+			break
+		}
+		node = childs[pos]
+	}
+	if i != kLen {
+		return nil
+	}
+	return node
+}
+
+func (trie *PathTrie) MatchPath(path string) (bool, *Processor) {
+	paths := strings.Split(path, "/")
+	pLen := len(paths)
+	if pLen <= 0 {
+		return false, nil
+	}
+	tPath := ""
+	var params *Params = nil
+	for i := 0; i < pLen-1; i++ {
+		tPath += paths[i]
+	}
+	node := trie.MatchPrefixPath(tPath)
+	if node == nil {
+		return false, nil
+	}
+	if node.IsVar {
+		params = &Params{
+			Value: paths[pLen-1],
+		}
+		p := &Processor{
+			params:  params,
+			Handler: node.Handler,
+		}
+		return true, p
+	} else {
+		node = trie.MatchPrefixPath(tPath + paths[pLen-1])
+		if node != nil {
+			p := &Processor{
+				params:  nil,
+				Handler: node.Handler,
+			}
+			return true, p
+		}
+	}
+	return false, nil
 }

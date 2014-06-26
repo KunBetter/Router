@@ -5,26 +5,29 @@ import (
 )
 
 type Router struct {
-	Paths map[string][]*Matcher
+	Paths map[string]*PathTrie
 }
 
 func GlobalRouter() *Router {
 	return &Router{
-		make(map[string][]*Matcher),
+		Paths: make(map[string]*PathTrie),
 	}
 }
 
 //match the correct router.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	for _, method := range r.Paths[req.Method] {
-		if match, Params := method.Matching(req.URL.Path); match {
-			method.Process(Params, w, req)
-		}
+	match, p := r.Paths[req.Method].MatchPath(req.URL.Path)
+	if match {
+		p.Process(w, req)
 	}
 }
 
 func (r *Router) Insert(method, path string, handler HandlerFunc) {
-	r.Paths[method] = append(r.Paths[method], &Matcher{path, handler})
+	_, exist := r.Paths[method]
+	if !exist {
+		r.Paths[method] = NewPathTrie()
+	}
+	r.Paths[method].AddPath(path, handler)
 }
 
 func (r *Router) Get(path string, handler HandlerFunc) {
